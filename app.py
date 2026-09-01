@@ -39,10 +39,7 @@ def build_gmaps_url(address: str, name: str, city: str, state: str, country: str
     query = f"{name}, {address}, {city}, {state}, {country}"
     return f"https://www.google.com/maps/search/?api=1&query={quote(query)}"
 
-
-
-
-def generate_unique_thumbnail(name: str, lat: float, lon: float) -> str:
+def generate_unique_thumbnail(name: str) -> str:
     initials = "".join([w[0] for w in name.split()[:2]]).upper() or "P"
     color_hex = hashlib.md5(name.encode()).hexdigest()[:6]
     svg_data = (
@@ -54,13 +51,11 @@ def generate_unique_thumbnail(name: str, lat: float, lon: float) -> str:
     )
     return f"data:image/svg+xml;utf8,{quote(svg_data)}"
 
-
-
 # -------------------------------------------------------------------
 # 2. Extraction Engine
 # -------------------------------------------------------------------
 async def fetch_places_fast(city: str, state: str, country: str, category: str):
-    headers = {"User-Agent": "FastCityExplorer/4.0"}
+    headers = {"User-Agent": "FastCityExplorer/5.0"}
     search_query = f"{category} in {city} {state} {country}"
     
     extracted_items = []
@@ -77,7 +72,6 @@ async def fetch_places_fast(city: str, state: str, country: str, category: str):
                         addr = ", ".join(item.get("display_name", "").split(",")[1:4]) or f"Near {city}"
                         extratags = item.get("extratags", {}) or {}
                         
-                        # Phone extraction logic
                         phone = (
                             extratags.get("phone") 
                             or extratags.get("contact:phone") 
@@ -93,7 +87,7 @@ async def fetch_places_fast(city: str, state: str, country: str, category: str):
                         lon = float(item.get("lon", 0))
                         
                         if not img:
-                            img = generate_unique_thumbnail(name, lat, lon)
+                            img = generate_unique_thumbnail(name)
 
                         extracted_items.append({
                             "name": name,
@@ -133,7 +127,7 @@ def search_places_db(city: str, state: str, country: str, category: Optional[str
     total_count = cursor.fetchone()[0]
 
     if total_count < 10:
-        asyncio.run(fetch_places_fast(city, state, country, category if category else "Police Station"))
+        asyncio.run(fetch_places_fast(city, state, country, category if category else "Hotels"))
         cursor.execute(f"SELECT COUNT(*) FROM places {where_clause}", params)
         total_count = cursor.fetchone()[0]
 
@@ -180,7 +174,7 @@ def api_search(
     city: str = Query("Nagaon"),
     state: str = Query("Assam"),
     country: str = Query("India"),
-    category: Optional[str] = Query("Police Station"),
+    category: Optional[str] = Query("Hotels"),
     page: int = Query(1, ge=1),
     limit: int = Query(10, ge=10, le=50)
 ):
@@ -229,9 +223,9 @@ def render_dashboard():
                     <div>
                         <label class="block text-sm font-semibold text-gray-700 mb-1">Category</label>
                         <select id="categorySelect" class="w-full p-2 border rounded-md border-gray-300">
+                            <option value="Hotels">Hotels</option>
                             <option value="Police Station">Police Station</option>
                             <option value="Fire Station">Fire Station</option>
-                            <option value="Hotels">Hotels</option>
                             <option value="Hospitals">Hospitals</option>
                             <option value="Railway Station">Railway Station</option>
                             <option value="Airport">Airport</option>
@@ -280,7 +274,25 @@ def render_dashboard():
 
             let map = L.map('map').setView([26.3452, 92.6835], 12);
             L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
-            let markersGroup = L.layerGroup().addTo(map);
+            let markersMap = {}; 
+            let activeMarker = null;
+
+            // Helper to generate SVG map pin icons (Blue or Red)
+            function createCustomPin(color) {
+                const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 36" width="30" height="42">
+                    <path fill="${color}" stroke="#FFFFFF" stroke-width="1.5" d="M12 0C5.37 0 0 5.37 0 12c0 9 12 24 12 24s12-15 12-24c0-6.63-5.37-12-12-12z"/>
+                    <circle cx="12" cy="12" r="4" fill="#FFFFFF"/>
+                </svg>`;
+                return L.icon({
+                    iconUrl: 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svg),
+                    iconSize: [30, 42],
+                    iconAnchor: [15, 42],
+                    popupAnchor: [0, -36]
+                });
+            }
+
+            const blueIcon = createCustomPin('#2563EB');
+            const redIcon = createCustomPin('#DC2626');
 
             function openModal(imgSrc, title) {
                 document.getElementById('modalImg').src = imgSrc;
@@ -290,6 +302,20 @@ def render_dashboard():
 
             function closeModal() {
                 document.getElementById('imageModal').classList.add('hidden');
+            }
+
+            function highlightPlace(idx, lat, lng) {
+                if (activeMarker) {
+                    activeMarker.setIcon(blueIcon);
+                }
+
+                const marker = markersMap[idx];
+                if (marker) {
+                    marker.setIcon(redIcon);
+                    activeMarker = marker;
+                    map.flyTo([lat, lng], 16, { duration: 1.2 });
+                    marker.openPopup();
+                }
             }
 
             async function loadCountries() {
@@ -406,19 +432,24 @@ def render_dashboard():
                     totalPages = data.total_pages;
                     const container = document.getElementById('results');
                     container.innerHTML = '';
-                    markersGroup.clearLayers();
+                    
+                    // Clear existing markers
+                    Object.values(markersMap).forEach(m => map.removeLayer(m));
+                    markersMap = {};
+                    activeMarker = null;
 
                     document.getElementById('badgeCount').innerText = `${data.total_count} Found`;
 
                     let bounds = [];
                     data.items.forEach(item => {
                         const card = document.createElement('div');
-                        card.className = 'border rounded-lg p-3 bg-white shadow-sm hover:border-indigo-500 transition cursor-pointer flex gap-3 items-start';
+                        card.className = 'border rounded-lg p-3 bg-white shadow-sm hover:border-indigo-500 transition cursor-pointer flex gap-3 items-start hover:shadow-md';
                         card.onclick = () => {
                             if (item.latitude && item.longitude) {
-                                map.setView([item.latitude, item.longitude], 15);
+                                highlightPlace(item.serial_no, item.latitude, item.longitude);
                             }
                         };
+
                         card.innerHTML = `
                             <div class="relative group flex-shrink-0">
                                 <img src="${item.image_url}" alt="${item.name}" class="w-20 h-20 object-cover rounded-md border cursor-zoom-in" onclick="event.stopPropagation(); openModal('${item.image_url}', '${item.name}')"/>
@@ -440,8 +471,16 @@ def render_dashboard():
                         container.appendChild(card);
 
                         if (item.latitude && item.longitude && item.latitude !== 0) {
-                            const marker = L.marker([item.latitude, item.longitude]).bindPopup(`<b>${item.serial_no}. ${item.name}</b><br>${item.address}<br><b>Phone:</b> ${item.phone}`);
-                            markersGroup.addLayer(marker);
+                            const popupContent = `
+                                <div class="p-1">
+                                    <h4 class="font-bold text-sm text-gray-900">${item.serial_no}. ${item.name}</h4>
+                                    <p class="text-xs text-gray-600 mt-1"><i class="fa-solid fa-location-dot text-red-500 mr-1"></i>${item.address}</p>
+                                    ${item.phone !== 'Not Available' ? `<p class="text-xs font-semibold text-blue-600 mt-1"><i class="fa-solid fa-phone mr-1"></i>${item.phone}</p>` : ''}
+                                </div>
+                            `;
+                            const marker = L.marker([item.latitude, item.longitude], { icon: blueIcon }).bindPopup(popupContent);
+                            marker.addTo(map);
+                            markersMap[item.serial_no] = marker;
                             bounds.push([item.latitude, item.longitude]);
                         }
                     });
