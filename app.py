@@ -39,18 +39,22 @@ def build_gmaps_url(address: str, name: str, city: str, state: str, country: str
     query = f"{name}, {address}, {city}, {state}, {country}"
     return f"https://www.google.com/maps/search/?api=1&query={quote(query)}"
 
+
+
+
 def generate_unique_thumbnail(name: str, lat: float, lon: float) -> str:
-    if lat != 0.0 and lon != 0.0:
-        return f"https://static-map.maps.sapo.pt/0.1/staticmap.png?center={lat},{lon}&zoom=16&size=300x300&markers={lat},{lon},red"
-    
     initials = "".join([w[0] for w in name.split()[:2]]).upper() or "P"
     color_hex = hashlib.md5(name.encode()).hexdigest()[:6]
-    svg_data = f"""<svg xmlns='http://www.w3.org/2000/svg' width='300' height='300' viewBox='0 0 300 300'>
-        <rect width='100%' height='100%' fill='%23{color_hex}'/>
-        <circle cx='150' cy='150' r='80' fill='white' opacity='0.2'/>
-        <text x='50%' y='55%' dominant-baseline='middle' text-anchor='middle' font-family='Arial, sans-serif' font-size='80' font-weight='bold' fill='white'>{initials}</text>
-    </svg>"""
-    return f"data:image/svg+xml;utf8,{svg_data}"
+    svg_data = (
+        f"<svg xmlns='http://www.w3.org/2000/svg' width='100' height='100' viewBox='0 0 100 100'>"
+        f"<rect width='100%' height='100%' fill='%23{color_hex}'/>"
+        f"<circle cx='50' cy='50' r='30' fill='white' opacity='0.2'/>"
+        f"<text x='50%' y='55%' dominant-baseline='middle' text-anchor='middle' font-family='sans-serif' font-size='32' font-weight='bold' fill='white'>{initials}</text>"
+        f"</svg>"
+    )
+    return f"data:image/svg+xml;utf8,{quote(svg_data)}"
+
+
 
 # -------------------------------------------------------------------
 # 2. Extraction Engine
