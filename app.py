@@ -305,10 +305,12 @@ def render_dashboard():
             }
 
             function highlightPlace(idx, lat, lng) {
+                // Reset previously selected marker back to blue
                 if (activeMarker) {
                     activeMarker.setIcon(blueIcon);
                 }
 
+                // Set selected marker to RED, pan to it, and open popup
                 const marker = markersMap[idx];
                 if (marker) {
                     marker.setIcon(redIcon);
@@ -455,7 +457,7 @@ def render_dashboard():
                                 <img src="${item.image_url}" alt="${item.name}" class="w-20 h-20 object-cover rounded-md border cursor-zoom-in" onclick="event.stopPropagation(); openModal('${item.image_url}', '${item.name}')"/>
                             </div>
                             <div class="flex-1 min-w-0">
-                                <h3 class="font-bold text-sm text-gray-900 truncate">${item.serial_no}. ${item.name}</h3>
+                                <h3 class="font-bold text-sm text-indigo-600 hover:text-indigo-800 truncate" onclick="highlightPlace(${item.serial_no}, ${item.latitude}, ${item.longitude})">${item.serial_no}. ${item.name}</h3>
                                 <p class="text-xs text-gray-500 mb-1 line-clamp-2"><i class="fa-solid fa-location-dot text-red-500 mr-1"></i>${item.address}</p>
                                 <p class="text-xs text-gray-600 mb-2">
                                     <i class="fa-solid fa-phone text-blue-500 mr-1"></i>
@@ -479,6 +481,12 @@ def render_dashboard():
                                 </div>
                             `;
                             const marker = L.marker([item.latitude, item.longitude], { icon: blueIcon }).bindPopup(popupContent);
+                            
+                            // Also handle marker direct click to turn red
+                            marker.on('click', () => {
+                                highlightPlace(item.serial_no, item.latitude, item.longitude);
+                            });
+
                             marker.addTo(map);
                             markersMap[item.serial_no] = marker;
                             bounds.push([item.latitude, item.longitude]);
